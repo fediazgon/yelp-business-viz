@@ -1,8 +1,14 @@
 library(shiny)
 
+library(jsonlite)
+library(tibble)
+
 # Define server logic required to draw a histogram
 shinyServer(function(input, output) {
-   
+  
+  yelp <- stream_in(file("data/business.json"))
+  yelp_flat <- flatten(yelp)
+  
   # SAMPLE
   output$distPlot <- renderPlot({
     
