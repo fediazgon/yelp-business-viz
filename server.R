@@ -18,7 +18,7 @@ PALETTE <- brewer.pal(9, "Set1")
 ########## LOAD DATA ###########
 ################################
 
-yelp <- stream_in(file("data/business.json"))
+yelp <- stream_in(file("data/business_sample.json"))
 yelp_flat <- flatten(yelp)
 
 ################################
