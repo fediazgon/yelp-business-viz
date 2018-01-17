@@ -19,16 +19,13 @@ navbarPage("YelpBusinesses", fluid = TRUE,
   tabPanel("Clients heatmap",
     sidebarLayout(
       sidebarPanel(
-        sliderInput("bins",
-          "Number of bins:",
-          min = 1,
-          max = 50,
-          value = 30)
-        ),
-             
-        # Show a plot of the generated distribution
-        mainPanel(
-          plotOutput("distPlot")
+        checkboxInput("smooth", "Smooth", FALSE)
+      ),
+      mainPanel(
+        fluidRow(
+          plotOutput("heatmapCheckin", height = "300px"),
+          plotOutput("heatmapCheckin2", height = "300px")
+        )
       )
     )
   )

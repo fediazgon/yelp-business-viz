@@ -7,12 +7,26 @@ library(dplyr)
 library(ggplot2)
 library(RColorBrewer)
 
+library(lattice)
+library(latticeExtra)
+library(stringr)
+
+################################
+############ README ############
+################################
+
+#' I decided to do all the expensive computations before the shinyServer() function is called
+#' This means that, when you start the application, you are not going to see anything for a few
+#' seconds. Try to use the sample datasets I provided, it will take 10 seconds to load everything.
+
 ################################
 ####### CONFIG VARIABLES #######
 ################################
 
 MATRIX_SHAPE = 50
-PALETTE <- brewer.pal(9, "Set1")
+ADJ_PALETTE <- brewer.pal(9, "Set1")
+HEATMAP_PALETTE <- rev(heat.colors(30, alpha = 1))
+MAX_ROWS_OPENING_HOURS = 5000
 
 ################################
 ########## LOAD DATA ###########
@@ -20,6 +34,119 @@ PALETTE <- brewer.pal(9, "Set1")
 
 yelp <- stream_in(file("data/business_sample.json"))
 yelp_flat <- flatten(yelp)
+
+checkin <- flatten(stream_in(file("data/checkin_sample.json")))
+
+################################
+########### HEATMAP ############
+################################
+
+# Let's have fun. Vol. 2
+
+# Generate all the posible hours
+# Guess where is the Easter Egg here
+hours <- seq(from = ISOdate(1993, 2, 2, 0, 0), by = "hour", length.out = 24)
+hours <- as.character(format(hours, "%H:%M"))
+hours <- gsub("^0", "", hours)
+# Generate by a complex procedure, the days of the week
+days <- c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+checkinSum <- colSums(checkin[,-1], na.rm = TRUE)
+# 169 columns / 7 days => data every hour (24)
+
+checkinMatrix <-
+  matrix(
+    data = 0,
+    nrow = 24,
+    ncol = 7,
+    dimnames = list(hours, days)
+  )
+
+for (day in days) {
+  for (hour in hours) {
+    column_name <- paste("time.", day, ".", hour, sep = "")
+    checkinMatrix[hour, day] <- checkinSum[column_name]
+  }
+}
+
+# Ok. That was easy
+
+opening_hours <- yelp[["hours"]]
+opening_hours_n_rows <- length(opening_hours[,1])
+if (opening_hours_n_rows < MAX_ROWS_OPENING_HOURS) {
+  MAX_ROWS_OPENING_HOURS <- opening_hours_n_rows
+}
+
+openingHoursMatrix <-
+  matrix(
+    data = 0,
+    nrow = 24,
+    ncol = 7,
+    dimnames = list(hours, days)
+  )
+
+# THE COMPLEXITY IF THIS METHOD IS INSANE. DON'T EVEN LOOK AT IT
+for (day in days) {
+  # Retrieve the timetables for all the businesses for a certain day
+  # i.e., Monday -> [B1 {10:00-21:00}, B2 {12:00-00:00}, ... BN]
+  timetables_day <- opening_hours[1:MAX_ROWS_OPENING_HOURS, day]
+  for (timetable in timetables_day) {
+    # Sometimes is missing
+    if (!is.na(timetable)) {
+      # E.g., if we have 10:00-21:00. Extract 10 and 21
+      open_close <-
+        sapply(strsplit(timetable, "-"), function(x) {
+          as.numeric(substr(x, start = 1, stop = nchar(x) - 3))
+        })
+      open_h <- open_close[1]
+      close_h <- open_close[2]
+      close_day <- 2
+      if (open_h > close_h) {
+        close_day <- 3  # HAHAHAHAHA (it means 'next day')
+      }
+      range <-
+        seq(
+          from = ISOdate(1993, 2, 2, open_h, 0),
+          to = ISOdate(1993, 2, close_day, close_h, 0),
+          by = "hour"
+        )
+      range <- as.character(format(range, "%H:%M"))
+      range <- gsub("^0", "", range)
+      # YAL (Yet Another Loop)
+      for (hour in range) {
+        openingHoursMatrix[hour, day] <- openingHoursMatrix[hour, day] + 1
+      }
+    }
+  }
+}
+
+# Function called in shinyServer()
+heatmapPlot <- function(data, title, smooth = FALSE) {
+  
+  panel = panel.levelplot
+  contour = FALSE
+  
+  if (smooth) {
+    panel = panel.2dsmoother
+    contour = TRUE
+  }
+  
+  levelplot(
+    data,
+    col.regions = HEATMAP_PALETTE,
+    xlab = "",
+    ylab = "",
+    main = title,
+    panel = panel,
+    contour = contour,
+    scales = list(x = list(rot = 90))
+  )
+  
+}
+
+################################
+######### END HEATMAP ##########
+################################
 
 ################################
 ####### ADJACENCY MATRIX #######
@@ -104,10 +231,7 @@ edge_list$weight.cat <- cut(
   right = FALSE
 )
 
-# IMPORANT. We need to run the previous code just once
-# The following function it's the only thing that should be
-# executed every time the user interacts with the graph
-
+# Function called in shinyServer()
 matrixPlot <- function(order = "by Name") {
   
   node_order <- sort(node_list$name, decreasing = TRUE)
@@ -132,7 +256,7 @@ matrixPlot <- function(order = "by Name") {
     # make sure that ggplot does not drop unused factor levels
     scale_x_discrete(drop = FALSE, position = "top") +
     scale_y_discrete(drop = FALSE) +
-    scale_fill_manual(values = PALETTE) +
+    scale_fill_manual(values = ADJ_PALETTE) +
     theme_bw() +
     theme(
       panel.background = element_rect(colour = "white", fill="#FAFAFA"),
@@ -157,20 +281,18 @@ matrixPlot <- function(order = "by Name") {
 shinyServer(function(input, output) {
   
   output$adjMatrix <- renderPlot({
-    order = input$order
+    order <- input$order
     matrixPlot(order)
   })
   
-  # SAMPLE
-  output$distPlot <- renderPlot({
-    
-    # generate bins based on input$bins from ui.R
-    x    <- faithful[, 2] 
-    bins <- seq(min(x), max(x), length.out = input$bins + 1)
-    
-    # draw the histogram with the specified number of bins
-    hist(x, breaks = bins, col = 'darkgray', border = 'white')
-    
+  output$heatmapCheckin <- renderPlot({
+    smooth <- input$smooth
+    heatmapPlot(checkinMatrix, title = "Clients check-in", smooth = smooth)
+  })
+  
+  output$heatmapCheckin2 <- renderPlot({
+    smooth <- input$smooth
+    heatmapPlot(openingHoursMatrix, title = "Business timetable (sample)", smooth = smooth)
   })
   
 })
