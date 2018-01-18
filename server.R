@@ -23,19 +23,20 @@ library(stringr)
 ####### CONFIG VARIABLES #######
 ################################
 
-MATRIX_SHAPE = 50
-ADJ_PALETTE <- brewer.pal(9, "Set1")
+ADJ_MATRIX_SHAPE = 50
+ADJ_MATRIX_PALETTE <- brewer.pal(9, "Set1")
+
 HEATMAP_PALETTE <- rev(heat.colors(30, alpha = 1))
-MAX_ROWS_OPENING_HOURS = 5000
+HEATMAP_TIMETABLES_SAMPLE <- 5000
 
 ################################
 ########## LOAD DATA ###########
 ################################
 
-yelp <- stream_in(file("data/business_sample.json"))
-yelp_flat <- flatten(yelp)
+business_df <- flatten(stream_in(file("data/business_sample.json")))
 
-checkin <- flatten(stream_in(file("data/checkin_sample.json")))
+checkin_df <- flatten(stream_in(file("data/checkin_sample.json")))
+times_df <- merge(checkin_df, business_df[,c("business_id", "categories")], by = "business_id")
 
 ################################
 ########### HEATMAP ############
@@ -44,84 +45,82 @@ checkin <- flatten(stream_in(file("data/checkin_sample.json")))
 # Let's have fun. Vol. 2
 
 # Generate all the posible hours
-# Guess where is the Easter Egg here
-hours <- seq(from = ISOdate(1993, 2, 2, 0, 0), by = "hour", length.out = 24)
-hours <- as.character(format(hours, "%H:%M"))
-hours <- gsub("^0", "", hours)
-# Generate by a complex procedure, the days of the week
+hours <- sprintf("%d:00",seq(0, 23))
+# Generate, using a complex procedure, the days of the week
 days <- c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
-checkinSum <- colSums(checkin[,-1], na.rm = TRUE)
-# 169 columns / 7 days => data every hour (24)
-
-checkinMatrix <-
-  matrix(
-    data = 0,
-    nrow = 24,
-    ncol = 7,
-    dimnames = list(hours, days)
-  )
-
-for (day in days) {
-  for (hour in hours) {
-    column_name <- paste("time.", day, ".", hour, sep = "")
-    checkinMatrix[hour, day] <- checkinSum[column_name]
+computeCheckinMatrix <- function(filter_categories = NULL) {
+  
+  checkin <- times_df[ , sapply(times_df, is.numeric)]
+  checkinSum <- colSums(checkin, na.rm = TRUE)  # named list
+  
+  checkinMatrix <-
+    matrix(
+      data = 0,
+      nrow = 24,
+      ncol = 7,
+      dimnames = list(hours, days)
+    )
+  
+  for (day in days) {
+    for (hour in hours) {
+      column_name <- paste("time.", day, ".", hour, sep = "")
+      checkinMatrix[hour, day] <- checkinSum[column_name]
+    }
   }
+  
+  return(checkinMatrix)
+  
 }
 
-# Ok. That was easy
-
-opening_hours <- yelp[["hours"]]
-opening_hours_n_rows <- length(opening_hours[,1])
-if (opening_hours_n_rows < MAX_ROWS_OPENING_HOURS) {
-  MAX_ROWS_OPENING_HOURS <- opening_hours_n_rows
-}
-
-openingHoursMatrix <-
-  matrix(
-    data = 0,
-    nrow = 24,
-    ncol = 7,
-    dimnames = list(hours, days)
-  )
-
-# THE COMPLEXITY IF THIS METHOD IS INSANE. DON'T EVEN LOOK AT IT
-for (day in days) {
-  # Retrieve the timetables for all the businesses for a certain day
-  # i.e., Monday -> [B1 {10:00-21:00}, B2 {12:00-00:00}, ... BN]
-  timetables_day <- opening_hours[1:MAX_ROWS_OPENING_HOURS, day]
-  for (timetable in timetables_day) {
-    # Sometimes is missing
-    if (!is.na(timetable)) {
-      # E.g., if we have 10:00-21:00. Extract 10 and 21
-      open_close <-
-        sapply(strsplit(timetable, "-"), function(x) {
-          as.numeric(substr(x, start = 1, stop = nchar(x) - 3))
-        })
-      open_h <- open_close[1]
-      close_h <- open_close[2]
-      close_day <- 2
-      if (open_h > close_h) {
-        close_day <- 3  # HAHAHAHAHA (it means 'next day')
-      }
-      range <-
-        seq(
-          from = ISOdate(1993, 2, 2, open_h, 0),
-          to = ISOdate(1993, 2, close_day, close_h, 0),
-          by = "hour"
-        )
-      range <- as.character(format(range, "%H:%M"))
-      range <- gsub("^0", "", range)
-      # YAL (Yet Another Loop)
-      for (hour in range) {
-        openingHoursMatrix[hour, day] <- openingHoursMatrix[hour, day] + 1
+computeTimetableMatrix <- function(filter_categories = NULL) {
+ 
+  timetables_df <- subset(business_df, select = grep("hours.*", names(business_df)))
+  names(timetables_df) <- gsub("hours.", "", names(timetables_df))
+  
+  timetableMatrix <-
+    matrix(
+      data = 0,
+      nrow = 24,
+      ncol = 7,
+      dimnames = list(hours, days)
+    )
+  
+  # THE COMPLEXITY IF THIS THING IS INSANE. DON'T EVEN LOOK AT IT
+  for (day in days) {
+    # Retrieve the timetables for all the businesses for a certain day
+    # i.e., Monday -> [B1 {10:00-21:00}, B2 {12:00-00:00}, ... BN]
+    timetables_day <- timetables_df[1:HEATMAP_TIMETABLES_SAMPLE, day]
+    for (timetable in timetables_day) {
+      # Sometimes is missing
+      if (!is.na(timetable)) {
+        # TODO: extract with regex
+        open_close <-
+          sapply(strsplit(timetable, "-"), function(x) {
+            as.numeric(substr(x, start = 1, stop = nchar(x) - 3))
+          })
+        open_h <- open_close[1]
+        close_h <- open_close[2]
+        hours_open <- NULL
+        if (open_h > close_h) {
+          hours_open <- sprintf("%d:00",seq(open_h, 23))
+          hours_open <- c(hours_open, sprintf("%d:00",seq(0, close_h)))
+        } else {
+          hours_open <- sprintf("%d:00",seq(open_h, close_h))
+        }
+        # YAL (Yet Another Loop)
+        for (hour in hours_open) {
+          timetableMatrix[hour, day] <- timetableMatrix[hour, day] + 1
+        }
       }
     }
   }
+  
+  return(timetableMatrix)
+   
 }
 
-# Function called in shinyServer()
-heatmapPlot <- function(data, title, smooth = FALSE) {
+heatmapPlot <- function(data, title, smooth) {
   
   panel = panel.levelplot
   contour = FALSE
@@ -169,20 +168,20 @@ addAdjListToAdjMatrix <- function(adjList, adjMatrix) {
   }
 }
   
-categories_per_business <- yelp_flat[["categories"]]  # "categories" column contains lists
+categories_per_business <- business_df[["categories"]]  # "categories" column contains lists
 categories_all <- unlist(categories_per_business)
 categories_ocurrences <- as.data.frame(sort(table(categories_all), decreasing = T))  # black magic
 # cat("There is a total of", nrow(categories_ocurrences), "categories")
 # head(categories_ocurrences, 10)
 
 # Keep the most popular categories
-categories <- categories_ocurrences[1:MATRIX_SHAPE, "categories_all"]
+categories <- categories_ocurrences[1:ADJ_MATRIX_SHAPE, "categories_all"]
   
 adjMatrix <-
   matrix(
     data = 0,  # not adjacent by default. Also is the edge weight
-    nrow = MATRIX_SHAPE,
-    ncol = MATRIX_SHAPE,
+    nrow = ADJ_MATRIX_SHAPE,
+    ncol = ADJ_MATRIX_SHAPE,
     dimnames = list(categories, categories)  # rows and columns names
   )
   
@@ -256,7 +255,7 @@ matrixPlot <- function(order = "by Name") {
     # make sure that ggplot does not drop unused factor levels
     scale_x_discrete(drop = FALSE, position = "top") +
     scale_y_discrete(drop = FALSE) +
-    scale_fill_manual(values = ADJ_PALETTE) +
+    scale_fill_manual(values = ADJ_MATRIX_PALETTE) +
     theme_bw() +
     theme(
       panel.background = element_rect(colour = "white", fill="#FAFAFA"),
@@ -280,19 +279,48 @@ matrixPlot <- function(order = "by Name") {
 # Define server logic required to draw a histogram
 shinyServer(function(input, output) {
   
+  # Terribe workaround?
+  recalculationsNeeded <- reactiveVal(2)
+  
+  observeEvent({
+    list(input$category)
+  }, {
+    recalculationsNeeded(2)
+  })
+  
   output$adjMatrix <- renderPlot({
     order <- input$order
     matrixPlot(order)
   })
   
+  checkinMatrix <- NULL
   output$heatmapCheckin <- renderPlot({
-    smooth <- input$smooth
-    heatmapPlot(checkinMatrix, title = "Clients check-in", smooth = smooth)
+    
+    if (recalculationsNeeded()) {
+      checkinMatrix <<- computeCheckinMatrix()
+      recalculationsNeeded(recalculationsNeeded() - 1)
+    }
+    
+    heatmapPlot(checkinMatrix, title = "Clients check-in", input$smooth)
   })
   
-  output$heatmapCheckin2 <- renderPlot({
-    smooth <- input$smooth
-    heatmapPlot(openingHoursMatrix, title = "Business timetable (sample)", smooth = smooth)
+  timetableMatrix <- NULL
+  output$heatmapTimetable <- renderPlot({
+    
+    progress <- shiny::Progress$new()
+    progress$set(message = "Agregatting timetable data", value = 0)
+    on.exit(progress$close())
+    
+    updateProgress <- function(value, detail = NULL) {
+      progress$set(value = value, detail = detail)
+    }
+    
+    if (recalculationsNeeded()) {
+      timetableMatrix <<- computeTimetableMatrix()
+      recalculationsNeeded(recalculationsNeeded() - 1)
+    }
+    
+    heatmapPlot(timetableMatrix, title = "Business timetable (sample)", input$smooth)
   })
   
 })

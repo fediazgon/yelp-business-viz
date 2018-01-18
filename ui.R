@@ -19,13 +19,13 @@ navbarPage("YelpBusinesses", fluid = TRUE,
   tabPanel("Clients heatmap",
     sidebarLayout(
       sidebarPanel(
-        checkboxInput("smooth", "Smooth", FALSE)
+        checkboxInput("smooth", "Smooth", FALSE),
+        selectInput("category", "Category:",
+                    c("All", "//TODO"))
       ),
       mainPanel(
-        fluidRow(
-          plotOutput("heatmapCheckin", height = "300px"),
-          plotOutput("heatmapCheckin2", height = "300px")
-        )
+        plotOutput("heatmapCheckin", height = "300px"),
+        plotOutput("heatmapTimetable", height = "300px")
       )
     )
   )
