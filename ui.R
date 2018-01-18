@@ -21,7 +21,7 @@ navbarPage("YelpBusinesses", fluid = TRUE,
       sidebarPanel(
         checkboxInput("smooth", "Smooth", FALSE),
         selectInput("category", "Category:",
-                    c("All", "//TODO"))
+                    c("All", "Restaurants", "Shopping", "Food", "Health & Medical", "Nightlife", "Bars"))
       ),
       mainPanel(
         plotOutput("heatmapCheckin", height = "300px"),

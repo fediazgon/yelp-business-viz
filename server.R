@@ -1,3 +1,8 @@
+#' \author{Fernando Díaz}
+#' \author{Giorgio Ruffa}
+#' Technical School of Madrid (UPM)
+#' Master's Programme in Data Science (EIT Digital Master School)
+
 library(shiny)
 
 library(jsonlite)
@@ -27,6 +32,7 @@ ADJ_MATRIX_SHAPE = 50
 ADJ_MATRIX_PALETTE <- brewer.pal(9, "Set1")
 
 HEATMAP_PALETTE <- rev(heat.colors(30, alpha = 1))
+# Increase it at your own risk
 HEATMAP_TIMETABLES_SAMPLE <- 5000
 
 ################################
@@ -34,9 +40,12 @@ HEATMAP_TIMETABLES_SAMPLE <- 5000
 ################################
 
 business_df <- flatten(stream_in(file("data/business_sample.json")))
-
 checkin_df <- flatten(stream_in(file("data/checkin_sample.json")))
-times_df <- merge(checkin_df, business_df[,c("business_id", "categories")], by = "business_id")
+
+hourColumns <- grep("hours.*", names(business_df), value=T)
+
+times_df <- merge(checkin_df, business_df[,c("business_id", "categories", hourColumns)], by = "business_id")
+times_filtered_df <- cbind(times_df)
 
 ################################
 ########### HEATMAP ############
@@ -49,9 +58,21 @@ hours <- sprintf("%d:00",seq(0, 23))
 # Generate, using a complex procedure, the days of the week
 days <- c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
-computeCheckinMatrix <- function(filter_categories = NULL) {
+filterByCategory <- function(category) {
+  times_filtered_df <- cbind(times_df)
+  if (category != "All") {
+    # I've tried a million times with a more readable solution
+    times_filtered_df[, "belongs"] <-
+      apply(times_df["categories"], 1, function(x)
+        is.element(category, x[[1]]))
+    # '<<-' modifies the df in the global scope
+    times_filtered_df <<- subset(times_filtered_df, belongs)
+  }
+}
+
+computeCheckinMatrix <- function() {
   
-  checkin <- times_df[ , sapply(times_df, is.numeric)]
+  checkin <- times_filtered_df[, sapply(times_filtered_df, is.numeric)]
   checkinSum <- colSums(checkin, na.rm = TRUE)  # named list
   
   checkinMatrix <-
@@ -73,10 +94,16 @@ computeCheckinMatrix <- function(filter_categories = NULL) {
   
 }
 
-computeTimetableMatrix <- function(filter_categories = NULL) {
+computeTimetableMatrix <- function(updateProgress) {
  
-  timetables_df <- subset(business_df, select = grep("hours.*", names(business_df)))
+  timetables_df <- subset(times_filtered_df, select = grep("hours.*", names(times_filtered_df)))
   names(timetables_df) <- gsub("hours.", "", names(timetables_df))
+  
+  n_elements <- nrow(timetables_df)
+  if (n_elements < HEATMAP_TIMETABLES_SAMPLE) {
+    # This value os local to the function
+    HEATMAP_TIMETABLES_SAMPLE <- n_elements
+  }
   
   timetableMatrix <-
     matrix(
@@ -87,7 +114,10 @@ computeTimetableMatrix <- function(filter_categories = NULL) {
     )
   
   # THE COMPLEXITY IF THIS THING IS INSANE. DON'T EVEN LOOK AT IT
+  days_left = 7
   for (day in days) {
+    updateProgress(value = 1 / days_left, detail = day)
+    days_left = days_left - 1
     # Retrieve the timetables for all the businesses for a certain day
     # i.e., Monday -> [B1 {10:00-21:00}, B2 {12:00-00:00}, ... BN]
     timetables_day <- timetables_df[1:HEATMAP_TIMETABLES_SAMPLE, day]
@@ -210,7 +240,6 @@ V(graph)$degree <- degree(graph)
 # Re-generate dataframes for both nodes and edges, now containing
 # calculated network attributes
 node_list <- get.data.frame(graph, what = "vertices")
-
 # Determine a community for each edge. If two nodes belong to the
 # same community, label the edge with that community. If not,
 # the edge community value is 'NA'
@@ -276,8 +305,16 @@ matrixPlot <- function(order = "by Name") {
 ##### END ADJACENCY MATRIX #####
 ################################
 
-# Define server logic required to draw a histogram
 shinyServer(function(input, output) {
+  
+  ################################
+  
+  output$adjMatrix <- renderPlot({
+    order <- input$order
+    matrixPlot(order)
+  })
+  
+  ################################
   
   # Terribe workaround?
   recalculationsNeeded <- reactiveVal(2)
@@ -288,13 +325,12 @@ shinyServer(function(input, output) {
     recalculationsNeeded(2)
   })
   
-  output$adjMatrix <- renderPlot({
-    order <- input$order
-    matrixPlot(order)
-  })
+  filterHeatmapValues <- reactive({ filterByCategory(input$category) })
   
   checkinMatrix <- NULL
   output$heatmapCheckin <- renderPlot({
+    
+    filterHeatmapValues()
     
     if (recalculationsNeeded()) {
       checkinMatrix <<- computeCheckinMatrix()
@@ -307,6 +343,10 @@ shinyServer(function(input, output) {
   timetableMatrix <- NULL
   output$heatmapTimetable <- renderPlot({
     
+    # It's ok calling the function two times. It's only executed once
+    # See: https://shiny.rstudio.com/articles/reactivity-overview.html
+    filterHeatmapValues()
+    
     progress <- shiny::Progress$new()
     progress$set(message = "Agregatting timetable data", value = 0)
     on.exit(progress$close())
@@ -316,11 +356,13 @@ shinyServer(function(input, output) {
     }
     
     if (recalculationsNeeded()) {
-      timetableMatrix <<- computeTimetableMatrix()
+      timetableMatrix <<- computeTimetableMatrix(updateProgress)
       recalculationsNeeded(recalculationsNeeded() - 1)
     }
     
     heatmapPlot(timetableMatrix, title = "Business timetable (sample)", input$smooth)
   })
   
-})
+  ################################
+  
+}) 
