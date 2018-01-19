@@ -28,7 +28,7 @@ library(stringr)
 ####### CONFIG VARIABLES #######
 ################################
 
-ADJ_MATRIX_SHAPE = 50
+ADJ_MATRIX_SHAPE = 40
 ADJ_MATRIX_PALETTE <- brewer.pal(9, "Set1")
 
 HEATMAP_PALETTE <- rev(heat.colors(30, alpha = 1))
@@ -260,7 +260,7 @@ edge_list$weight.cat <- cut(
 )
 
 # Function called in shinyServer()
-matrixPlot <- function(order = "by Name") {
+matrixPlot <- function(order = "by Name", colorDifferentClusters = FALSE) {
   
   node_order <- sort(node_list$name, decreasing = TRUE)
   
@@ -275,7 +275,7 @@ matrixPlot <- function(order = "by Name") {
   # the specified order
   plot_data <- edge_list %>% mutate(to = factor(to, levels = node_order),
                                     from = factor(from, levels = rev(node_order)))
-  
+
   p <-
     ggplot(plot_data, aes(x = from, y = to, fill = group, alpha = weight.cat)) +
     geom_raster(hjust = 0, vjust = 0) +
@@ -284,10 +284,9 @@ matrixPlot <- function(order = "by Name") {
     # make sure that ggplot does not drop unused factor levels
     scale_x_discrete(drop = FALSE, position = "top") +
     scale_y_discrete(drop = FALSE) +
-    scale_fill_manual(values = ADJ_MATRIX_PALETTE) +
     theme_bw() +
     theme(
-      panel.background = element_rect(colour = "white", fill="#FAFAFA"),
+      panel.background = element_rect(colour = "white", fill = "#FAFAFA"),
       panel.grid.major = element_line(colour = "white"),
       axis.title.x=element_blank(),
       axis.title.y=element_blank(),
@@ -297,7 +296,13 @@ matrixPlot <- function(order = "by Name") {
       aspect.ratio = 1,
       # Hide the legend (optional)
       legend.position = "none")
-  
+
+  if (colorDifferentClusters) {
+    p <- p + scale_fill_manual(values = ADJ_MATRIX_PALETTE, na.value = "black")
+  } else {
+    p <- p + scale_fill_manual(values = ADJ_MATRIX_PALETTE)
+  }
+    
   return(p)
 }
 
@@ -311,7 +316,7 @@ shinyServer(function(input, output) {
   
   output$adjMatrix <- renderPlot({
     order <- input$order
-    matrixPlot(order)
+    matrixPlot(order, input$different)
   })
   
   ################################
