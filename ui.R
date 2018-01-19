@@ -7,12 +7,13 @@ navbarPage("YelpBusinesses", fluid = TRUE,
   tabPanel("Categories co-ocurrences",
     sidebarLayout(
       sidebarPanel(
+        checkboxInput("different", "Color categories in different clusters", FALSE),
         selectInput('order', 'Order',
           c("by Name", "by Frequency", "by Cluster")            
         )
       ),
       mainPanel(
-        plotOutput("adjMatrix", height = "700px")
+        plotOutput("adjMatrix", height = "550px")
       )
     )
   ),
@@ -24,8 +25,8 @@ navbarPage("YelpBusinesses", fluid = TRUE,
                     c("All", "Restaurants", "Shopping", "Food", "Health & Medical", "Nightlife", "Bars"))
       ),
       mainPanel(
-        plotOutput("heatmapCheckin", height = "300px"),
-        plotOutput("heatmapTimetable", height = "300px")
+        plotOutput("heatmapCheckin", height = "280px"),
+        plotOutput("heatmapTimetable", height = "280px")
       )
     )
   )
