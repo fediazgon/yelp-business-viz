@@ -11,6 +11,7 @@ library(igraph)
 library(dplyr)
 library(ggplot2)
 library(RColorBrewer)
+library(viridisLite)
 
 library(lattice)
 library(latticeExtra)
@@ -28,10 +29,10 @@ library(stringr)
 ####### CONFIG VARIABLES #######
 ################################
 
-ADJ_MATRIX_SHAPE = 40
+ADJ_MATRIX_SHAPE = 60
 ADJ_MATRIX_PALETTE <- brewer.pal(9, "Set1")
 
-HEATMAP_PALETTE <- rev(heat.colors(30, alpha = 1))
+HEATMAP_PALETTE <- magma(20)
 # Increase it at your own risk
 HEATMAP_TIMETABLES_SAMPLE <- 5000
 

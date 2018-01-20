@@ -21,7 +21,7 @@ navbarPage("YelpBusinesses", fluid = TRUE,
           The darker the color, the higher the frequency the two categories occur.")
       ),
       mainPanel(
-        plotOutput("adjMatrix", height = "550px")
+        plotOutput("adjMatrix", height = "800px")
       )
     )
   ),
@@ -37,8 +37,8 @@ navbarPage("YelpBusinesses", fluid = TRUE,
           the business location.")
       ),
       mainPanel(
-        plotOutput("heatmapCheckin", height = "280px"),
-        plotOutput("heatmapTimetable", height = "280px")
+        plotOutput("heatmapCheckin", height = "400px"),
+        plotOutput("heatmapTimetable", height = "400px")
       )
     )
   )
