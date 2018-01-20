@@ -45,7 +45,7 @@ checkin_df <- flatten(stream_in(file("data/checkin_sample.json")))
 
 hourColumns <- grep("hours.*", names(business_df), value=T)
 
-times_df <- merge(checkin_df, business_df[,c("business_id", "categories", hourColumns)], by = "business_id")
+times_df <- base::merge(checkin_df, business_df[,c("business_id", "categories", hourColumns)], by = "business_id")
 times_filtered_df <- cbind(times_df)
 
 ################################
@@ -250,13 +250,12 @@ edge_list <- get.data.frame(graph, what = "edges") %>%
   mutate(group = ifelse(comm.x == comm.y, comm.x, NA) %>% factor())
 
 # I used this histogram the make the 'breaks' below
-# hist(edge_list[edge_list$weight < 500, ])
+# hist(edge_list[edge_list$weight < 500, ])+
+edgeBreaks <- hist(plot = FALSE, edge_list$weight, breaks = 10)$breaks
 
 edge_list$weight.cat <- cut(
   edge_list$weight,
-  breaks = c(0, 1, 10, 50, 100, 200, 500, 1000, 2000, Inf),
-  labels = c("0", "<10", "10<x<50", "50<x<100", "100<x<200",
-             "200<x<500", "500<1000", "1000<2000", ">2000"),
+  breaks = edgeBreaks,
   right = FALSE
 )
 
@@ -312,6 +311,116 @@ matrixPlot <- function(order = "by Name", colorDifferentClusters = FALSE) {
 ################################
 
 shinyServer(function(input, output) {
+  
+  ## Interactive Map ###########################################
+  
+  # Create the map
+  output$map <- renderLeaflet({
+    leaflet() %>%
+      addTiles(
+        urlTemplate = "//{s}.tiles.mapbox.com/v3/jcheng.map-5ebohr46/{z}/{x}/{y}.png",
+        attribution = 'Maps by <a href="http://www.mapbox.com/">Mapbox</a>'
+      ) %>%
+      setView(lng = -93.85, lat = 37.45, zoom = 4)
+  })
+  
+  # A reactive expression that returns the set of zips that are
+  # in bounds right now
+  zipsInBounds <- reactive({
+    if (is.null(input$map_bounds))
+      return(business_df[FALSE,])
+    bounds <- input$map_bounds
+    latRng <- range(bounds$north, bounds$south)
+    lngRng <- range(bounds$east, bounds$west)
+    
+    subset(business_df,
+           latitude >= latRng[1] & latitude <= latRng[2] &
+             longitude >= lngRng[1] & longitude <= lngRng[2])
+  })
+  
+  # Precalculate the breaks we'll need for the two histograms
+  centileBreaks <- hist(plot = FALSE, business_df$stars, breaks = 5)$breaks
+  
+  output$histCentile <- renderPlot({
+    # If no zipcodes are in view, don't plot
+    if (nrow(zipsInBounds()) == 0)
+      return(NULL)
+    
+    hist(zipsInBounds()$stars,
+         breaks = centileBreaks,
+         main = "SuperZIP score (visible zips)",
+         xlab = "Percentile",
+         xlim = range(business_df$stars),
+         col = '#00DD00',
+         border = 'white')
+  })
+  
+  output$scatterCollegeIncome <- renderPlot({
+    # If no zipcodes are in view, don't plot
+    if (nrow(zipsInBounds()) == 0)
+      return(NULL)
+    
+    print(xyplot(log(review_count) ~ stars, data = zipsInBounds(), xlim = range(business_df$stars), ylim = range(log(business_df$review_count))))
+  })
+  
+  # This observer is responsible for maintaining the circles and legend,
+  # according to the variables the user has chosen to map to color and size.
+  observe({
+    colorBy <- input$color
+    sizeBy <- input$size
+    
+    # if (colorBy == "stars") {
+    #   # Color and palette are treated specially in the "superzip" case, because
+    #   # the values are categorical instead of continuous.
+    #   colorData <- ifelse(business_df$stars >= (5 - input$threshold), "yes", "no")
+    #   pal <- colorFactor("viridis", colorData)
+    # } else {
+      colorData <- business_df[[colorBy]]
+      pal <- colorBin("viridis", colorData, 7, pretty = FALSE)
+    # }
+    
+    # if (sizeBy == "stars") {
+    #   # Radius is treated specially in the "superzip" case.
+    #   radius <- ifelse(zipdata$centile >= (100 - input$threshold), 30000, 3000)
+    # } else {
+      radius <- business_df[[sizeBy]] / max(business_df[[sizeBy]]) * 30000
+    # }
+    
+    leafletProxy("map", data = business_df) %>%
+      clearShapes() %>%
+      addCircles(~longitude, ~latitude, radius=radius, layerId=~postal_code,
+                 stroke=FALSE, fillOpacity=0.4, fillColor=pal(colorData)) %>%
+      addLegend("bottomleft", pal=pal, values=colorData, title=colorBy,
+                layerId="colorLegend")
+    
+    # Show a popup at the given location
+    showZipcodePopup <- function(zipcode, lat, lng) {
+      selectedZip <- business_df[business_df$postal_code == zipcode,]
+      content <- as.character(tagList(
+        tags$h4("Stars:", as.integer(selectedZip$stars)),
+        tags$strong(HTML(sprintf("%s, %s %s",
+                                 selectedZip$name, selectedZip$address, selectedZip$postal_code
+        ))), tags$br()
+        # sprintf("Median household income: %s", dollar(selectedZip$income * 1000)), tags$br(),
+        # sprintf("Percent of adults with BA: %s%%", as.integer(selectedZip$college)), tags$br(),
+        # sprintf("Adult population: %s", selectedZip$adultpop)
+      ))
+      leafletProxy("map") %>% addPopups(lng, lat, content, layerId = zipcode)
+    }
+    
+    # When map is clicked, show a popup with city info
+    observe({
+      leafletProxy("map") %>% clearPopups()
+      event <- input$map_shape_click
+      if (is.null(event))
+        return()
+      
+      isolate({
+        showZipcodePopup(event$id, event$lat, event$lng)
+      })
+    })
+    
+  })
   
   ################################
   
