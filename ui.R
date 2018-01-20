@@ -4,11 +4,11 @@ library(leaflet)
 # Choices for drop-downs
 vars <- c(
   "Stars" = "stars",
-  "Review count" = "review_count"
+  "Review count" = "review_count_log"
 )
 
 navbarPage("YelpBusinesses", fluid = TRUE,
-           tabPanel("Interactive map",
+           tabPanel("Map",
                     div(class="outer",
                         
                         tags$head(
@@ -22,24 +22,24 @@ navbarPage("YelpBusinesses", fluid = TRUE,
                         
                         # Shiny versions prior to 0.11 should use class = "modal" instead.
                         absolutePanel(id = "controls", class = "panel panel-default", fixed = TRUE,
-                                      draggable = TRUE, top = 60, left = "auto", right = 20, bottom = "auto",
+                                      draggable = TRUE, top = 130, left = "20", right = "auto", bottom = "auto",
                                       width = 330, height = "auto",
                                       
-                                      h2("ZIP explorer"),
+                                      h2("Explorer"),
                                       
                                       selectInput("color", "Color", vars),
                                       selectInput("size", "Size", vars, selected = "adultpop"),
+                                        sliderInput("stars_r", "Stars range:", 
+                                                    min = 1, max = 5,
+                                                    step = 0.5,
+                                                    value = c(1, 5)),
                                       conditionalPanel("input.color == 'superzip' || input.size == 'superzip'",
                                                        # Only prompt for threshold when coloring or sizing by superzip
                                                        numericInput("threshold", "SuperZIP threshold (top n percentile)", 5)
                                       ),
                                       
-                                      plotOutput("histCentile", height = 200),
-                                      plotOutput("scatterCollegeIncome", height = 250)
-                        ),
-                        
-                        tags$div(id="cite",
-                                 'Data compiled for ', tags$em('Coming Apart: The State of White America, 1960–2010'), ' by Charles Murray (Crown Forum, 2012).'
+                                      plotOutput("histStars", height = 200),
+                                      plotOutput("scatterReviewsCheckin", height = 250)
                         )
                     )
            ),

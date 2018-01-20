@@ -3,27 +3,17 @@
 #' Technical School of Madrid (UPM)
 #' Master's Programme in Data Science (EIT Digital Master School)
 
-library(shiny)
-
-library(jsonlite)
-library(tibble)
-library(igraph)
 library(dplyr)
 library(ggplot2)
-library(RColorBrewer)
-library(viridisLite)
-
+library(igraph)
+library(jsonlite)
 library(lattice)
 library(latticeExtra)
+library(RColorBrewer)
+library(shiny)
 library(stringr)
-
-################################
-############ README ############
-################################
-
-#' I decided to do all the expensive computations before the shinyServer() function is called
-#' This means that, when you start the application, you are not going to see anything for a few
-#' seconds. Try to use the sample datasets I provided, it will take 10 seconds to load everything.
+library(tibble)
+library(viridisLite)
 
 ################################
 ####### CONFIG VARIABLES #######
@@ -34,6 +24,7 @@ ADJ_MATRIX_PALETTE <- brewer.pal(9, "Set1")
 
 HEATMAP_PALETTE <- magma(20)
 # Increase it at your own risk
+MAP_SAMPLE <- 5000
 HEATMAP_TIMETABLES_SAMPLE <- 5000
 
 ################################
@@ -43,10 +34,18 @@ HEATMAP_TIMETABLES_SAMPLE <- 5000
 business_df <- flatten(stream_in(file("data/business_sample.json")))
 checkin_df <- flatten(stream_in(file("data/checkin_sample.json")))
 
-hourColumns <- grep("hours.*", names(business_df), value=T)
+checkinColumns <- grep("time.*", names(times_df), value=T)
+map_df <- base::merge(business_df, checkin_df[,c("business_id", checkinColumns)], by = "business_id")
+if (nrow(map_df) > MAP_SAMPLE) {
+  map_df <- map_df[sample(1:nrow(map_df),MAP_SAMPLE, replace=FALSE),]
+}
+map_df = subset(map_df, map_df$review_count < 1000)
+map_df$review_count_log = log(map_df$review_count)
 
+hourColumns <- grep("hours.*", names(business_df), value=T)
 times_df <- base::merge(checkin_df, business_df[,c("business_id", "categories", hourColumns)], by = "business_id")
-times_filtered_df <- cbind(times_df)
+
+# times_filtered_df <- cbind(times_df)
 
 ################################
 ########### HEATMAP ############
@@ -312,7 +311,9 @@ matrixPlot <- function(order = "by Name", colorDifferentClusters = FALSE) {
 
 shinyServer(function(input, output) {
   
-  ## Interactive Map ###########################################
+  ################################
+  ######## INTERACTIVE MAP #######
+  ################################
   
   # Create the map
   output$map <- renderLeaflet({
@@ -321,104 +322,71 @@ shinyServer(function(input, output) {
         urlTemplate = "//{s}.tiles.mapbox.com/v3/jcheng.map-5ebohr46/{z}/{x}/{y}.png",
         attribution = 'Maps by <a href="http://www.mapbox.com/">Mapbox</a>'
       ) %>%
-      setView(lng = -93.85, lat = 37.45, zoom = 4)
+      setView(lng = -100, lat = 37.45, zoom = 5)
   })
   
-  # A reactive expression that returns the set of zips that are
-  # in bounds right now
   zipsInBounds <- reactive({
     if (is.null(input$map_bounds))
-      return(business_df[FALSE,])
+      return(times_df[FALSE,])
     bounds <- input$map_bounds
     latRng <- range(bounds$north, bounds$south)
     lngRng <- range(bounds$east, bounds$west)
+    starsRange <- input$stars_r
     
-    subset(business_df,
+    subset(map_df,
            latitude >= latRng[1] & latitude <= latRng[2] &
-             longitude >= lngRng[1] & longitude <= lngRng[2])
+             longitude >= lngRng[1] & longitude <= lngRng[2] &
+             stars >= starsRange[1] & stars <= starsRange[2])
   })
   
-  # Precalculate the breaks we'll need for the two histograms
-  centileBreaks <- hist(plot = FALSE, business_df$stars, breaks = 5)$breaks
-  
-  output$histCentile <- renderPlot({
-    # If no zipcodes are in view, don't plot
+  output$histStars <- renderPlot({
     if (nrow(zipsInBounds()) == 0)
       return(NULL)
     
-    hist(zipsInBounds()$stars,
-         breaks = centileBreaks,
-         main = "SuperZIP score (visible zips)",
-         xlab = "Percentile",
-         xlim = range(business_df$stars),
-         col = '#00DD00',
-         border = 'white')
+    ggplot(zipsInBounds(), aes(x = stars)) +
+      geom_bar(
+        breaks = c(1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5),
+        color = "black",
+        fill = "#FE0F00") +
+      ggtitle("Users' average stars") +
+      xlab("Stars")
+
   })
   
-  output$scatterCollegeIncome <- renderPlot({
+  output$scatterReviewsCheckin <- renderPlot({
     # If no zipcodes are in view, don't plot
     if (nrow(zipsInBounds()) == 0)
       return(NULL)
+
+    data <- cbind(zipsInBounds())
+    data$totalCheckin <- rowSums(data[,c(checkinColumns)], na.rm = T)
+
+    ggplot(data, aes(x = review_count, y = totalCheckin)) +
+      geom_point(fill = "#0ECB00", colour = "black", pch = 21, size = 5) +
+      xlab("Review count") +
+      ylab("Client check-ins")
     
-    print(xyplot(log(review_count) ~ stars, data = zipsInBounds(), xlim = range(business_df$stars), ylim = range(log(business_df$review_count))))
   })
   
-  # This observer is responsible for maintaining the circles and legend,
-  # according to the variables the user has chosen to map to color and size.
   observe({
     colorBy <- input$color
     sizeBy <- input$size
+    new_zoom <- input$map_zoom
+    starsRange <- input$stars_r
     
-    # if (colorBy == "stars") {
-    #   # Color and palette are treated specially in the "superzip" case, because
-    #   # the values are categorical instead of continuous.
-    #   colorData <- ifelse(business_df$stars >= (5 - input$threshold), "yes", "no")
-    #   pal <- colorFactor("viridis", colorData)
-    # } else {
-      colorData <- business_df[[colorBy]]
-      pal <- colorBin("viridis", colorData, 7, pretty = FALSE)
-    # }
+    data <- subset(map_df, stars >= starsRange[1] & stars <= starsRange[2])
     
-    # if (sizeBy == "stars") {
-    #   # Radius is treated specially in the "superzip" case.
-    #   radius <- ifelse(zipdata$centile >= (100 - input$threshold), 30000, 3000)
-    # } else {
-      radius <- business_df[[sizeBy]] / max(business_df[[sizeBy]]) * 30000
-    # }
+    colorData <- data[[colorBy]]
+    pal <- colorBin("viridis", colorData, 7, pretty = TRUE)
     
-    leafletProxy("map", data = business_df) %>%
+    radius <- map_df[[sizeBy]] / max(map_df[[sizeBy]]) * 500000 / new_zoom ^ 2
+    
+    leafletProxy("map", data = map_df) %>%
       clearShapes() %>%
-      addCircles(~longitude, ~latitude, radius=radius, layerId=~postal_code,
-                 stroke=FALSE, fillOpacity=0.4, fillColor=pal(colorData)) %>%
-      addLegend("bottomleft", pal=pal, values=colorData, title=colorBy,
-                layerId="colorLegend")
-    
-    # Show a popup at the given location
-    showZipcodePopup <- function(zipcode, lat, lng) {
-      selectedZip <- business_df[business_df$postal_code == zipcode,]
-      content <- as.character(tagList(
-        tags$h4("Stars:", as.integer(selectedZip$stars)),
-        tags$strong(HTML(sprintf("%s, %s %s",
-                                 selectedZip$name, selectedZip$address, selectedZip$postal_code
-        ))), tags$br()
-        # sprintf("Median household income: %s", dollar(selectedZip$income * 1000)), tags$br(),
-        # sprintf("Percent of adults with BA: %s%%", as.integer(selectedZip$college)), tags$br(),
-        # sprintf("Adult population: %s", selectedZip$adultpop)
-      ))
-      leafletProxy("map") %>% addPopups(lng, lat, content, layerId = zipcode)
-    }
-    
-    # When map is clicked, show a popup with city info
-    observe({
-      leafletProxy("map") %>% clearPopups()
-      event <- input$map_shape_click
-      if (is.null(event))
-        return()
-      
-      isolate({
-        showZipcodePopup(event$id, event$lat, event$lng)
-      })
-    })
+      addCircles(~longitude, ~ latitude, radius = radius, layerId =  ~ postal_code,
+                 stroke = F, fillOpacity = 0.4, fillColor = pal(colorData)) %>%
+      addLegend("bottomleft", pal = pal, values = colorData, title = colorBy,
+                layerId = "colorLegend")
     
   })
   
