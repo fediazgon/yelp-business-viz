@@ -13,7 +13,7 @@ Visualizing <a href="https://www.yelp.com/dataset/challenge">yelp challeng's</a>
   <a href="#live-demo">Live Demo</a> •
   <a href="#getting-started">Getting started</a> •
   <a href="#idioms">Idioms</a> •
-  <a href="#authors">Authors</a>
+  <a href="#authors-es-blue_heart-it">Authors</a>
   <!-- <a href="#license">License</a> -->
  </p>
 
