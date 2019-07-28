@@ -1,6 +1,6 @@
 <h1 align="center">
   <div style="margin:10px;">
-    <img src="https://github.com/fdiazgon/fdiazgon.github.io/blob/master/art/yelp-business-viz-logo.png?raw=true" alt="project-logo" width="200px">
+    <img src="https://github.com/fediazgon/yelp-business-viz/blob/assets/logo.png?raw=true" alt="project-logo" width="200px">
   </div>
   yelp-business-viz
 </h1>
@@ -67,7 +67,7 @@ Businesses can be filtered by review score and the size and color of the bubbles
 can encode different values.
 
 All the idioms are coordinated, as can be seen in the following demo:
-![project-demo](https://github.com/fdiazgon/fdiazgon.github.io/blob/master/art/yelp-business-viz-demo1.gif?raw=true)
+![map-demo](https://github.com/fediazgon/yelp-business-viz/blob/assets/demo1.gif?raw=true)
 
 
 
@@ -78,7 +78,7 @@ Being inspired by the ["les miserables" co-occurrence adiacency matrix](https://
 The user will be able to manipulate the view by selecting the sorting criteria
 of the matrix by name of category, frequency and cluster.
 
-![project-demo](https://github.com/fdiazgon/fdiazgon.github.io/blob/master/art/yelp-business-viz-demo2.gif?raw=true)
+![adjacency-matrix-demo](https://github.com/fediazgon/yelp-business-viz/blob/assets/demo2.gif?raw=true)
 
 #### Heatmap
 
@@ -90,7 +90,7 @@ of business open in that hour/day. The user have the capability to filter by
 selecting the category to analyze. We choose a purely sequential colormap without a central reference. The user is also be able to apply smoothing to the heat map to
 ease the detection of particular patterns, like you can see in the demo below.
 
-![project-demo](https://github.com/fdiazgon/fdiazgon.github.io/blob/master/art/yelp-business-viz-demo3.gif?raw=true)
+![heatmap-demo](https://github.com/fediazgon/yelp-business-viz/blob/assets/demo3.gif?raw=true)
 
 
 ## Learn More
